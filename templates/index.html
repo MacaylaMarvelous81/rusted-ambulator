@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Rusted Ambulator</title>
+</head>
+<body>
+<h2>Sessions</h2>
+<ul>
+{% for session in sessions %}
+    <li>
+        <span>{{session.steam_name}}'s game</span>
+        <form action="/session/{{session.steam_id}}">
+            <input name="passcode" placeholder="Passcode">
+            <input type="submit">
+        </form>
+    </li>
+{% endfor %}
+</ul>
+</body>
+</html>
