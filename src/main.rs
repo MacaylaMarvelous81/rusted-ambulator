@@ -3,7 +3,6 @@ mod template;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::ops::{Deref, Index};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use askama::Template;
@@ -21,13 +20,13 @@ use crate::template::IndexTemplate;
 struct Asset;
 
 struct AppState {
-    sessions: Mutex<Vec<Session>>
+    sessions: Mutex<HashMap<String, Session>>
 }
 
 impl AppState {
     fn new() -> Self {
         AppState {
-            sessions: Mutex::new(Vec::new())
+            sessions: Mutex::new(HashMap::new())
         }
     }
 }
@@ -75,7 +74,7 @@ async fn visit_session(Path(id): Path<String>, Query(query): Query<HashMap<Strin
 
     let sessions = state.sessions.lock().unwrap();
 
-    match sessions.iter().find(|session| session.steam_id == id) {
+    match sessions.get(&id) {
         Some(session) => {
             if passcode.map(|passcode| passcode.as_str() == session.passcode).unwrap_or(false) {
                 (StatusCode::OK, "hi").into_response()
@@ -93,14 +92,11 @@ async fn create_session(Path(id): Path<String>, Query(query): Query<HashMap<Stri
 
     let mut sessions = state.sessions.lock().unwrap();
 
-    sessions.iter().position(|session| session.steam_id == id).map(|idx| sessions.swap_remove(idx));
-
     let session = Session {
         steam_name: name,
-        steam_id: id,
         passcode: passcode.clone()
     };
-    sessions.push(session);
+    sessions.insert(id, session);
 
     (StatusCode::CREATED, passcode).into_response()
 }

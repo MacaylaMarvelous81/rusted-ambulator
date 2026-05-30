@@ -7,10 +7,10 @@
 <body>
 <h2>Sessions</h2>
 <ul>
-{% for session in sessions %}
+{% for (id, session) in sessions %}
     <li>
         <span>{{session.steam_name}}'s game</span>
-        <form action="/session/{{session.steam_id}}">
+        <form action="/session/{{id}}">
             <input name="passcode" placeholder="Passcode">
             <input type="submit">
         </form>
