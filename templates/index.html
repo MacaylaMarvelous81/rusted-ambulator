@@ -5,11 +5,11 @@
     <title>Rusted Ambulator</title>
 </head>
 <body>
-<h2>Sessions</h2>
+<h1>Sessions</h1>
 <ul>
 {% for (id, session) in sessions %}
     <li>
-        <span>{{session.steam_name}}'s game</span>
+        <span>{{session.steam_name}}'s game ({{id}})</span>
         <form action="/session/{{id}}">
             <input name="passcode" placeholder="Passcode">
             <input type="submit">

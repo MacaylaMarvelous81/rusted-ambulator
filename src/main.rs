@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use askama::Template;
+use askama::{Template};
 use axum::extract::{Path, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
@@ -13,7 +13,7 @@ use axum::Router;
 use axum::routing::{get};
 use rust_embed::Embed;
 use crate::session::{Session};
-use crate::template::IndexTemplate;
+use crate::template::{IndexTemplate, SessionTemplate};
 
 #[derive(Embed)]
 #[folder = "assets/"]
@@ -44,23 +44,28 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn serve_index(State(state): State<Arc<AppState>>) -> Response {
-    let sessions = state.sessions.lock().unwrap();
-    let template = IndexTemplate {
-        sessions: &sessions
-    };
-
+fn serve_template(template: impl Template) -> Response {
     match template.render() {
         Ok(html) => Html(html).into_response(),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Render error").into_response()
+        Err(err) => {
+            eprintln!("An error occurred while rendering a template: {}", err);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Render error").into_response()
+        }
     }
+}
+
+async fn serve_index(State(state): State<Arc<AppState>>) -> Response {
+    let sessions = state.sessions.lock().unwrap();
+    serve_template(IndexTemplate {
+        sessions: &sessions
+    })
 }
 
 async fn serve_static(Path(path): Path<String>) -> Response {
     match Asset::get(path.as_str()) {
         Some(content) => {
             let mime = match path.split('.').last() {
-                Some("html") => "text/html",
+                Some("js") => "application/javascript",
                 _ => "application/octet-stream"
             };
             ([(header::CONTENT_TYPE, mime)], content.data).into_response()
@@ -76,10 +81,12 @@ async fn visit_session(Path(id): Path<String>, Query(query): Query<HashMap<Strin
 
     match sessions.get(&id) {
         Some(session) => {
-            if passcode.map(|passcode| passcode.as_str() == session.passcode).unwrap_or(false) {
-                (StatusCode::OK, "hi").into_response()
-            } else {
-                (StatusCode::FORBIDDEN, "Incorrect session passcode").into_response()
+            match passcode {
+                Some(passcode) if passcode.as_str() == session.passcode =>
+                    serve_template(SessionTemplate {
+                        session: &session
+                    }),
+                _ => (StatusCode::FORBIDDEN, "Incorrect session passcode").into_response()
             }
         },
         None => (StatusCode::NOT_FOUND, "Session does not exist").into_response()
@@ -92,10 +99,7 @@ async fn create_session(Path(id): Path<String>, Query(query): Query<HashMap<Stri
 
     let mut sessions = state.sessions.lock().unwrap();
 
-    let session = Session {
-        steam_name: name,
-        passcode: passcode.clone()
-    };
+    let session = Session::new(name, passcode.clone());
     sessions.insert(id, session);
 
     (StatusCode::CREATED, passcode).into_response()

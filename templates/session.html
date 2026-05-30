@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{session.steam_name}}'s game</title>
+    <script src="/dist/session.js" defer></script>
+</head>
+<body>
+<h1>{{session.steam_name}}'s game</h1>
+<form id="player-selection">
+    <h2>Player Selection</h2>
+    <label for="color-select">Your color:</label>
+    <select id="color-select">
+        <option value="">None selected</option>
+        <hr>
+        {% for (color, _) in session.hands %}
+        <option value="{{color}}">{{color}}</option>
+        {% endfor %}
+    </select>
+</form>
+</body>
+</html>
