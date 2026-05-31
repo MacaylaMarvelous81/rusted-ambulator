@@ -11,5 +11,6 @@ pub struct IndexTemplate<'a> {
 #[derive(Template)]
 #[template(path = "session.html")]
 pub struct SessionTemplate<'a> {
+    pub id: &'a String,
     pub session: &'a Session,
 }

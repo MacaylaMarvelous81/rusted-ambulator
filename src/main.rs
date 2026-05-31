@@ -4,13 +4,13 @@ mod template;
 use crate::session::{HandObject, Session};
 use crate::template::{IndexTemplate, SessionTemplate};
 use askama::Template;
-use axum::extract::{Path, Query, State};
-use axum::http::{header, StatusCode};
+use axum::extract::ws::WebSocket;
+use axum::extract::{Path, Query, State, WebSocketUpgrade};
+use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, put};
+use axum::routing::{any, get};
 use axum::{Json, Router};
 use rust_embed::Embed;
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -18,7 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Embed)]
 #[folder = "assets/"]
-struct Asset;
+struct EmbedAsset;
 
 struct AppState {
     sessions: Mutex<HashMap<String, Session>>,
@@ -38,7 +38,8 @@ async fn main() {
         .route("/", get(serve_index))
         .route("/dist/{*path}", get(serve_static))
         .route("/session/{id}", get(visit_session).put(create_session))
-        .route("/session/{id}/hands", put(update_hands))
+        .route("/session/{id}/hands", get(serve_hands).put(update_hands))
+        .route("/session/{id}/play", any(upgrade_play))
         .with_state(Arc::new(AppState::new()));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -64,9 +65,9 @@ async fn serve_index(State(state): State<Arc<AppState>>) -> Response {
 }
 
 async fn serve_static(Path(path): Path<String>) -> Response {
-    match Asset::get(path.as_str()) {
+    match EmbedAsset::get(path.as_str()) {
         Some(content) => {
-            let mime = match path.split('.').last() {
+            let mime = match path.split('.').next_back() {
                 Some("js") => "application/javascript",
                 _ => "application/octet-stream",
             };
@@ -88,7 +89,7 @@ async fn visit_session(
     match sessions.get(&id) {
         Some(session) => match passcode {
             Some(passcode) if passcode.as_str() == session.passcode => {
-                serve_template(SessionTemplate { session: &session })
+                serve_template(SessionTemplate { id: &id, session })
             }
             _ => (StatusCode::FORBIDDEN, "Incorrect session passcode").into_response(),
         },
@@ -101,10 +102,7 @@ async fn create_session(
     Query(query): Query<HashMap<String, String>>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    let name = query
-        .get("name")
-        .map(|name| name.clone())
-        .unwrap_or("Unknown".to_string());
+    let name = query.get("name").cloned().unwrap_or("Unknown".to_string());
     let passcode = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.subsec_nanos())
@@ -117,6 +115,15 @@ async fn create_session(
     sessions.insert(id, session);
 
     (StatusCode::CREATED, passcode).into_response()
+}
+
+async fn serve_hands(Path(id): Path<String>, State(state): State<Arc<AppState>>) -> Response {
+    let sessions = state.sessions.lock().unwrap();
+
+    match sessions.get(&id) {
+        Some(session) => Json(session.hands.keys().collect::<Vec<_>>()).into_response(),
+        None => (StatusCode::NOT_FOUND, "Session does not exist").into_response(),
+    }
 }
 
 async fn update_hands(
@@ -132,5 +139,16 @@ async fn update_hands(
             (StatusCode::NO_CONTENT, ()).into_response()
         }
         None => (StatusCode::NOT_FOUND, "Session does not exist").into_response(),
+    }
+}
+
+async fn upgrade_play(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
+    ws.on_upgrade(|socket| handle_play(socket, state))
+}
+
+#[allow(unused_variables)]
+async fn handle_play(mut socket: WebSocket, state: Arc<AppState>) {
+    while let Some(msg) = socket.recv().await {
+        todo!()
     }
 }

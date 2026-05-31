@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <title>{{session.steam_name}}'s game</title>
-    <script src="/dist/session.js" defer></script>
+    <script id="session-script" data-id="{{id}}" src="/dist/session.js" defer></script>
 </head>
 <body>
 <h1>{{session.steam_name}}'s game</h1>
 <form id="player-selection">
     <h2>Player Selection</h2>
     <label for="color-select">Your color:</label>
-    <select id="color-select">
+    <select id="color-select" disabled>
         <option value="">None selected</option>
         <hr>
         {% for (color, _) in session.hands %}

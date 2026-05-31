@@ -7,12 +7,18 @@ pub struct Session {
     pub hands: HashMap<String, Vec<HandObject>>,
 }
 
+// TODO: The values on these variants will be used in the future and there will be more variants.
+//       Once this happens, the dead_code lint should no longer be suppressed.
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub enum HandObject {
     CustomDeck(CustomDeck),
 }
 
+// TODO: These fields will be used in the future. When they are, the dead_code lint should no longer
+//       be suppressed.
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct CustomDeck {
     /// The path/URL of the face cardsheet.
     face: String,
