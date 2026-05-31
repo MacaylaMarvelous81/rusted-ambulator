@@ -1,0 +1,4 @@
+This directory contains suggested commit hooks for Git. You can symlink
+specific Git hooks that you want to use, or you can set core.hooksPath to this
+directory if you want to use all of them. Please make sure to check hooks before
+you start to use them.
