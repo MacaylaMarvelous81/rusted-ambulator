@@ -7,7 +7,7 @@
 <body>
 <h1>Sessions</h1>
 <ul>
-{% for (id, session) in sessions %}
+    {% for (id, session) in sessions %}
     <li>
         <span>{{session.steam_name}}'s game ({{id}})</span>
         <form action="/session/{{id}}">
@@ -15,7 +15,7 @@
             <input type="submit">
         </form>
     </li>
-{% endfor %}
+    {% endfor %}
 </ul>
 </body>
 </html>

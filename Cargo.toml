@@ -7,4 +7,5 @@ edition = "2024"
 askama = "0.16.0"
 axum = "0.8.9"
 rust-embed = "8.11.0"
+serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.52.3", features = ["full"] }
