@@ -576,6 +576,7 @@ dependencies = [
  "axum",
  "rust-embed",
  "serde",
+ "serde_json",
  "tokio",
 ]
 

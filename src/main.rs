@@ -1,10 +1,11 @@
+mod play;
 mod session;
 mod template;
 
+use crate::play::handle_play;
 use crate::session::{HandObject, Session};
 use crate::template::{IndexTemplate, SessionTemplate};
 use askama::Template;
-use axum::extract::ws::WebSocket;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
@@ -144,11 +145,4 @@ async fn update_hands(
 
 async fn upgrade_play(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
     ws.on_upgrade(|socket| handle_play(socket, state))
-}
-
-#[allow(unused_variables)]
-async fn handle_play(mut socket: WebSocket, state: Arc<AppState>) {
-    while let Some(msg) = socket.recv().await {
-        todo!()
-    }
 }
