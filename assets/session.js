@@ -25,6 +25,9 @@ websocket.addEventListener('message', (event) => {
             colorSelect.appendChild(selection);
         });
         colorSelect.disabled = false;
+    } else if (Object.hasOwn(message, 'Hand')) {
+        const payload = message.Hand;
+        colorSelect.disabled = false;
     }
 });
 
@@ -33,5 +36,11 @@ websocket.addEventListener('close', () => {
 });
 
 colorSelect.addEventListener('change', () => {
+    if (colorSelect.value === '') return;
+    
     colorSelect.disabled = true;
+
+    websocket.send(JSON.stringify({
+        "Color": colorSelect.value
+    }));
 });
