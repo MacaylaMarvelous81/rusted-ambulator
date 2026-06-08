@@ -5,17 +5,10 @@
     <title>Rusted Ambulator</title>
 </head>
 <body>
-<h1>Sessions</h1>
-<ul>
-    {% for (id, session) in sessions %}
-    <li>
-        <span>{{session.steam_name}}'s game ({{id}})</span>
-        <form action="/session/{{id}}">
-            <input name="passcode" placeholder="Passcode">
-            <input type="submit">
-        </form>
-    </li>
-    {% endfor %}
-</ul>
+<form action="/find-session">
+    <label for="id">Session ID</label>
+    <input id="id" name="id" placeholder="000000" required>
+    <input type="submit">
+</form>
 </body>
 </html>

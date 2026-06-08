@@ -8,14 +8,13 @@ use crate::template::{IndexTemplate, SessionTemplate};
 use askama::Template;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::{StatusCode, header};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{any, get, put};
 use axum::{Json, Router};
 use rust_embed::Embed;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Embed)]
 #[folder = "assets/"]
@@ -38,6 +37,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(serve_index))
         .route("/dist/{*path}", get(serve_static))
+        .route("/find-session", get(find_session))
         .route("/session/{id}", get(visit_session).put(create_session))
         .route("/session/{id}/hands", put(update_hands))
         .route("/session/{id}/play", any(upgrade_play))
@@ -49,17 +49,14 @@ async fn main() {
 }
 
 fn serve_template(template: impl Template) -> Result<Html<String>, &'static str> {
-    template.render()
-        .map(|html| Html(html))
-        .map_err(|err| {
-            eprintln!("Template render error: {}", err);
-            "Template render error"
-        })
+    template.render().map(Html).map_err(|err| {
+        eprintln!("Template render error: {}", err);
+        "Template render error"
+    })
 }
 
-async fn serve_index(State(state): State<Arc<AppState>>) -> axum::response::Result<Html<String>> {
-    let sessions = state.sessions.read().unwrap();
-    let template = IndexTemplate { sessions: &sessions };
+async fn serve_index() -> axum::response::Result<Html<String>> {
+    let template = IndexTemplate;
     Ok(serve_template(template)?)
 }
 
@@ -76,42 +73,37 @@ async fn serve_static(Path(path): Path<String>) -> Response {
     }
 }
 
+async fn find_session(Query(query): Query<HashMap<String, String>>) -> axum::response::Result<Redirect> {
+    let id = query.get("id").ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Redirect::to(format!("/session/{}", id).as_str()))
+}
+
 async fn visit_session(
     Path(id): Path<String>,
-    Query(query): Query<HashMap<String, String>>,
     State(state): State<Arc<AppState>>,
 ) -> axum::response::Result<Html<String>> {
-    let passcode = query.get("passcode");
-
     let sessions = state.sessions.read().unwrap();
-    let session = sessions.get(&id).ok_or((StatusCode::NOT_FOUND, "Session does not exist"))?;
+    let session = sessions
+        .get(&id)
+        .ok_or((StatusCode::NOT_FOUND, "Session does not exist"))?;
 
-    if let Some(passcode) = passcode && passcode.as_str() == session.passcode {
-        let template = SessionTemplate { id: &id, session };
-        Ok(serve_template(template)?)
-    } else {
-        Err((StatusCode::FORBIDDEN, "Incorrect session passcode"))?
-    }
+    let template = SessionTemplate { id: &id, session };
+    Ok(serve_template(template)?)
 }
 
 async fn create_session(
     Path(id): Path<String>,
     Query(query): Query<HashMap<String, String>>,
     State(state): State<Arc<AppState>>,
-) -> Response {
+) -> StatusCode {
     let name = query.get("name").cloned().unwrap_or("Unknown".to_string());
-    let passcode = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.subsec_nanos())
-        .unwrap_or(675603000)
-        .to_string();
 
     let mut sessions = state.sessions.write().unwrap();
 
-    let session = Session::new(name, passcode.clone());
+    let session = Session::new(name);
     sessions.insert(id, session);
 
-    (StatusCode::CREATED, passcode).into_response()
+    StatusCode::CREATED
 }
 
 async fn update_hands(
