@@ -9,12 +9,12 @@ use askama::Template;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{any, get};
+use axum::routing::{any, get, put};
 use axum::{Json, Router};
 use rust_embed::Embed;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Embed)]
@@ -39,7 +39,7 @@ async fn main() {
         .route("/", get(serve_index))
         .route("/dist/{*path}", get(serve_static))
         .route("/session/{id}", get(visit_session).put(create_session))
-        .route("/session/{id}/hands", get(serve_hands).put(update_hands))
+        .route("/session/{id}/hands", put(update_hands))
         .route("/session/{id}/play", any(upgrade_play))
         .with_state(Arc::new(AppState::new()));
 
@@ -48,21 +48,19 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-fn serve_template(template: impl Template) -> Response {
-    match template.render() {
-        Ok(html) => Html(html).into_response(),
-        Err(err) => {
-            eprintln!("An error occurred while rendering a template: {}", err);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Render error").into_response()
-        }
-    }
+fn serve_template(template: impl Template) -> Result<Html<String>, &'static str> {
+    template.render()
+        .map(|html| Html(html))
+        .map_err(|err| {
+            eprintln!("Template render error: {}", err);
+            "Template render error"
+        })
 }
 
-async fn serve_index(State(state): State<Arc<AppState>>) -> Response {
+async fn serve_index(State(state): State<Arc<AppState>>) -> axum::response::Result<Html<String>> {
     let sessions = state.sessions.read().unwrap();
-    serve_template(IndexTemplate {
-        sessions: &sessions,
-    })
+    let template = IndexTemplate { sessions: &sessions };
+    Ok(serve_template(template)?)
 }
 
 async fn serve_static(Path(path): Path<String>) -> Response {
@@ -74,7 +72,7 @@ async fn serve_static(Path(path): Path<String>) -> Response {
             };
             ([(header::CONTENT_TYPE, mime)], content.data).into_response()
         }
-        None => (StatusCode::NOT_FOUND, "404 Not Found").into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
@@ -82,19 +80,17 @@ async fn visit_session(
     Path(id): Path<String>,
     Query(query): Query<HashMap<String, String>>,
     State(state): State<Arc<AppState>>,
-) -> Response {
+) -> axum::response::Result<Html<String>> {
     let passcode = query.get("passcode");
 
     let sessions = state.sessions.read().unwrap();
+    let session = sessions.get(&id).ok_or((StatusCode::NOT_FOUND, "Session does not exist"))?;
 
-    match sessions.get(&id) {
-        Some(session) => match passcode {
-            Some(passcode) if passcode.as_str() == session.passcode => {
-                serve_template(SessionTemplate { id: &id, session })
-            }
-            _ => (StatusCode::FORBIDDEN, "Incorrect session passcode").into_response(),
-        },
-        None => (StatusCode::NOT_FOUND, "Session does not exist").into_response(),
+    if let Some(passcode) = passcode && passcode.as_str() == session.passcode {
+        let template = SessionTemplate { id: &id, session };
+        Ok(serve_template(template)?)
+    } else {
+        Err((StatusCode::FORBIDDEN, "Incorrect session passcode"))?
     }
 }
 
@@ -118,28 +114,19 @@ async fn create_session(
     (StatusCode::CREATED, passcode).into_response()
 }
 
-async fn serve_hands(Path(id): Path<String>, State(state): State<Arc<AppState>>) -> Response {
-    let sessions = state.sessions.read().unwrap();
-
-    match sessions.get(&id) {
-        Some(session) => Json(session.hands.keys().collect::<Vec<_>>()).into_response(),
-        None => (StatusCode::NOT_FOUND, "Session does not exist").into_response(),
-    }
-}
-
 async fn update_hands(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
     Json(payload): Json<HashMap<String, Vec<HandObject>>>,
-) -> Response {
+) -> StatusCode {
     let mut sessions = state.sessions.write().unwrap();
 
     match sessions.get_mut(&id) {
         Some(session) => {
             session.hands = payload;
-            (StatusCode::NO_CONTENT, ()).into_response()
+            StatusCode::NO_CONTENT
         }
-        None => (StatusCode::NOT_FOUND, "Session does not exist").into_response(),
+        None => StatusCode::NOT_FOUND,
     }
 }
 
