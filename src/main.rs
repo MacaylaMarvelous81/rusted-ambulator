@@ -14,7 +14,7 @@ use axum::{Json, Router};
 use rust_embed::Embed;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Embed)]
@@ -22,13 +22,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 struct EmbedAsset;
 
 struct AppState {
-    sessions: Mutex<HashMap<String, Session>>,
+    sessions: RwLock<HashMap<String, Session>>,
 }
 
 impl AppState {
     fn new() -> Self {
         AppState {
-            sessions: Mutex::new(HashMap::new()),
+            sessions: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -59,7 +59,7 @@ fn serve_template(template: impl Template) -> Response {
 }
 
 async fn serve_index(State(state): State<Arc<AppState>>) -> Response {
-    let sessions = state.sessions.lock().unwrap();
+    let sessions = state.sessions.read().unwrap();
     serve_template(IndexTemplate {
         sessions: &sessions,
     })
@@ -85,7 +85,7 @@ async fn visit_session(
 ) -> Response {
     let passcode = query.get("passcode");
 
-    let sessions = state.sessions.lock().unwrap();
+    let sessions = state.sessions.read().unwrap();
 
     match sessions.get(&id) {
         Some(session) => match passcode {
@@ -110,7 +110,7 @@ async fn create_session(
         .unwrap_or(675603000)
         .to_string();
 
-    let mut sessions = state.sessions.lock().unwrap();
+    let mut sessions = state.sessions.write().unwrap();
 
     let session = Session::new(name, passcode.clone());
     sessions.insert(id, session);
@@ -119,7 +119,7 @@ async fn create_session(
 }
 
 async fn serve_hands(Path(id): Path<String>, State(state): State<Arc<AppState>>) -> Response {
-    let sessions = state.sessions.lock().unwrap();
+    let sessions = state.sessions.read().unwrap();
 
     match sessions.get(&id) {
         Some(session) => Json(session.hands.keys().collect::<Vec<_>>()).into_response(),
@@ -132,7 +132,7 @@ async fn update_hands(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<HashMap<String, Vec<HandObject>>>,
 ) -> Response {
-    let mut sessions = state.sessions.lock().unwrap();
+    let mut sessions = state.sessions.write().unwrap();
 
     match sessions.get_mut(&id) {
         Some(session) => {
