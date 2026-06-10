@@ -1,8 +1,9 @@
 use crate::AppState;
-use crate::session::{HandObject, PlayUpdate, Session};
+use crate::session::{HandObject, Session};
 use axum::extract::ws::{Message, Utf8Bytes, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock, Weak};
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::RecvError;
@@ -22,6 +23,11 @@ enum OutgoingPlayMessage {
     Hand(Vec<HandObject>),
     // TODO: include error details
     Error,
+}
+
+#[derive(Clone)]
+pub enum PlayUpdate {
+    HandUpdate(HashMap<String, Vec<HandObject>>),
 }
 
 pub async fn handle_play(socket: WebSocket, app_state: Arc<AppState>) {
@@ -126,7 +132,7 @@ pub async fn handle_play(socket: WebSocket, app_state: Arc<AppState>) {
                             .unwrap()
                             .seats
                             .get(&color)
-                            .map(|seat| seat.hand.to_owned());
+                            .map(|seat| seat.to_owned());
                         match hand {
                             Some(hand) => {
                                 *player_color.write().unwrap() = color;
@@ -171,10 +177,19 @@ async fn handle_update(
 ) {
     loop {
         match update_rx.recv().await {
-            Ok(PlayUpdate::HandUpdate(color, hand)) => {
-                if *player_color.read().unwrap() == color {
+            Ok(PlayUpdate::HandUpdate(hands)) => {
+                let _ = sender_tx
+                    .send(OutgoingPlayMessage::Initialize {
+                        colors: hands.keys().cloned().collect(),
+                    })
+                    .await;
+                let hand = {
+                    let color = player_color.read().unwrap();
+                    hands.get(&*color).map(ToOwned::to_owned)
+                };
+                if let Some(hand) = hand {
                     let _ = sender_tx.send(OutgoingPlayMessage::Hand(hand)).await;
-                }
+                };
             }
             Err(RecvError::Closed) => break,
             Err(RecvError::Lagged(_)) => continue,

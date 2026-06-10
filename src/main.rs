@@ -2,8 +2,8 @@ mod play;
 mod session;
 mod template;
 
-use crate::play::handle_play;
-use crate::session::{HandObject, PlayUpdate, Seat, Session};
+use crate::play::{PlayUpdate, handle_play};
+use crate::session::{HandObject, Session};
 use crate::template::{IndexTemplate, SessionTemplate};
 use askama::Template;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
@@ -125,15 +125,9 @@ async fn update_hands(
         Some(session) => {
             let mut session = session.lock().unwrap();
 
-            for (color, hand) in payload {
-                let seat = session
-                    .seats
-                    .entry(color.to_owned())
-                    .or_insert_with(|| Seat { hand: Vec::new() });
+            session.seats = payload.to_owned();
+            let _ = session.update_tx.send(PlayUpdate::HandUpdate(payload));
 
-                seat.hand = hand.to_owned();
-                let _ = session.update_tx.send(PlayUpdate::HandUpdate(color, hand));
-            }
             StatusCode::NO_CONTENT
         }
         None => StatusCode::NOT_FOUND,

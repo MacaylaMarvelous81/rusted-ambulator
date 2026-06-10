@@ -1,10 +1,11 @@
+use crate::play::PlayUpdate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
 
 pub struct Session {
     pub steam_name: String,
-    pub seats: HashMap<String, Seat>,
+    pub seats: HashMap<String, Vec<HandObject>>,
     pub update_tx: broadcast::Sender<PlayUpdate>,
 }
 
@@ -37,15 +38,6 @@ pub struct CustomDeck {
     back_is_hidden: bool,
     /// ID of the custom card within the deck.
     card_id: f64,
-}
-
-pub struct Seat {
-    pub hand: Vec<HandObject>,
-}
-
-#[derive(Clone)]
-pub enum PlayUpdate {
-    HandUpdate(String, Vec<HandObject>),
 }
 
 impl Session {
