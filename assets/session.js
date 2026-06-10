@@ -15,9 +15,9 @@ websocket.addEventListener('message', (event) => {
 
     if (Object.hasOwn(message, 'Initialize')) {
         const payload = message.Initialize;
-        for (let element in Array.from(colorSelect.getElementsByClassName('color-select-colors'))) {
-            element.remove();
-        }
+        Array.from(colorSelect.getElementsByClassName('color-select-colors')).forEach((child) => {
+            child.remove();
+        });
         payload.colors.forEach((color) => {
             const selection = document.createElement('option');
             selection.value = color;
@@ -32,7 +32,7 @@ websocket.addEventListener('message', (event) => {
 
         Array.from(hand.children).forEach((child) => {
             child.remove();
-        })
+        });
 
         payload.forEach((handObject) => {
             if (Object.hasOwn(handObject, 'CustomDeck')) {
