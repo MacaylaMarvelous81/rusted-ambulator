@@ -34,7 +34,7 @@ pub async fn handle_play(mut socket: WebSocket, app_state: Arc<AppState>) {
                     // Blocked so that the guard is dropped after cloning the color names,
                     // preventing a potential deadlock when using .await after sending something
                     // through the socket, which would be possible if using tokio::sync::Mutex.
-                    // Of course, the sessions HashMap is wrapped instd::sync types instead, which
+                    // Of course, the sessions HashMap is wrapped in std::sync types instead, which
                     // does not enable locking the mutex through .await anyway.
                     let colors: Vec<String> = {
                         let sessions = app_state.sessions.read().unwrap();

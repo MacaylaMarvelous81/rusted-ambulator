@@ -65,6 +65,7 @@ async fn serve_static(Path(path): Path<String>) -> Response {
         Some(content) => {
             let mime = match path.split('.').next_back() {
                 Some("js") => "application/javascript",
+                Some("css") => "text/css",
                 _ => "application/octet-stream",
             };
             ([(header::CONTENT_TYPE, mime)], content.data).into_response()
@@ -73,7 +74,9 @@ async fn serve_static(Path(path): Path<String>) -> Response {
     }
 }
 
-async fn find_session(Query(query): Query<HashMap<String, String>>) -> axum::response::Result<Redirect> {
+async fn find_session(
+    Query(query): Query<HashMap<String, String>>,
+) -> axum::response::Result<Redirect> {
     let id = query.get("id").ok_or(StatusCode::NOT_FOUND)?;
     Ok(Redirect::to(format!("/session/{}", id).as_str()))
 }

@@ -36,6 +36,8 @@ pub struct CustomDeck {
     /// Whether the card back should be used as the hidden image (instead of the last slot of the
     /// `face` image).
     back_is_hidden: bool,
+    /// ID of the custom card within the deck.
+    card_id: f64,
 }
 
 impl Session {
