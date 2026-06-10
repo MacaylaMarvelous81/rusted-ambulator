@@ -3,7 +3,7 @@ mod session;
 mod template;
 
 use crate::play::handle_play;
-use crate::session::{HandObject, Session};
+use crate::session::{HandObject, Seat, Session};
 use crate::template::{IndexTemplate, SessionTemplate};
 use askama::Template;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
@@ -14,14 +14,14 @@ use axum::{Json, Router};
 use rust_embed::Embed;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 #[derive(Embed)]
 #[folder = "assets/"]
 struct EmbedAsset;
 
 struct AppState {
-    sessions: RwLock<HashMap<String, Session>>,
+    sessions: RwLock<HashMap<String, Arc<Mutex<Session>>>>,
 }
 
 impl AppState {
@@ -48,7 +48,7 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-fn serve_template(template: impl Template) -> Result<Html<String>, &'static str> {
+fn serve_template(template: &impl Template) -> Result<Html<String>, &'static str> {
     template.render().map(Html).map_err(|err| {
         eprintln!("Template render error: {}", err);
         "Template render error"
@@ -57,7 +57,7 @@ fn serve_template(template: impl Template) -> Result<Html<String>, &'static str>
 
 async fn serve_index() -> axum::response::Result<Html<String>> {
     let template = IndexTemplate;
-    Ok(serve_template(template)?)
+    Ok(serve_template(&template)?)
 }
 
 async fn serve_static(Path(path): Path<String>) -> Response {
@@ -88,10 +88,15 @@ async fn visit_session(
     let sessions = state.sessions.read().unwrap();
     let session = sessions
         .get(&id)
-        .ok_or((StatusCode::NOT_FOUND, "Session does not exist"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Session does not exist"))?
+        .lock()
+        .unwrap();
 
-    let template = SessionTemplate { id: &id, session };
-    Ok(serve_template(template)?)
+    let template = SessionTemplate {
+        id: &id,
+        session: &session,
+    };
+    Ok(serve_template(&template)?)
 }
 
 async fn create_session(
@@ -104,7 +109,7 @@ async fn create_session(
     let mut sessions = state.sessions.write().unwrap();
 
     let session = Session::new(name);
-    sessions.insert(id, session);
+    sessions.insert(id, Arc::new(Mutex::new(session)));
 
     StatusCode::CREATED
 }
@@ -118,7 +123,16 @@ async fn update_hands(
 
     match sessions.get_mut(&id) {
         Some(session) => {
-            session.hands = payload;
+            let mut session = session.lock().unwrap();
+
+            for (color, hand) in payload {
+                let seat = session
+                    .seats
+                    .entry(color)
+                    .or_insert_with(|| Seat { hand: Vec::new() });
+
+                seat.hand = hand;
+            }
             StatusCode::NO_CONTENT
         }
         None => StatusCode::NOT_FOUND,

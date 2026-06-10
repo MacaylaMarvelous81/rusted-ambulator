@@ -5,6 +5,16 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::sync::Arc;
 
+macro_rules! send_message_or_break {
+    ($socket:expr, $message:expr) => {{
+        let result = send_outgoing_message($socket, $message).await;
+        if let Err(err) = result {
+            eprintln!("Failed to send message to socket: {}", err);
+            break;
+        }
+    }};
+}
+
 #[derive(Deserialize)]
 enum IncomingPlayMessage {
     Initialize { id: String },
@@ -15,79 +25,93 @@ enum IncomingPlayMessage {
 enum OutgoingPlayMessage<'a> {
     Initialize { colors: Vec<&'a String> },
     Hand(Vec<&'a HandObject>),
+    // TODO: include error details
+    Error,
 }
 
-struct PlayState {
-    id: Option<String>,
+async fn send_outgoing_message(
+    socket: &mut WebSocket,
+    message: &OutgoingPlayMessage<'_>,
+) -> Result<(), Box<dyn Error>> {
+    let serialized = serde_json::to_string(message)?;
+    socket
+        .send(Message::Text(Utf8Bytes::from(serialized)))
+        .await
+        .map_err(Box::from)
 }
 
 pub async fn handle_play(mut socket: WebSocket, app_state: Arc<AppState>) {
-    let mut play_state = PlayState { id: None };
+    let mut player_session = None;
 
     while let Some(msg) = socket.recv().await {
-        let mut process = async |msg: Result<Message, axum::Error>,
-                                 play_state: &mut PlayState|
-               -> Result<(), Box<dyn Error>> {
-            let msg: IncomingPlayMessage = serde_json::from_str(msg?.to_text()?)?;
-            match msg {
-                IncomingPlayMessage::Initialize { id } => {
-                    // Blocked so that the guard is dropped after cloning the color names,
-                    // preventing a potential deadlock when using .await after sending something
-                    // through the socket, which would be possible if using tokio::sync::Mutex.
-                    // Of course, the sessions HashMap is wrapped in std::sync types instead, which
-                    // does not enable locking the mutex through .await anyway.
-                    let colors: Vec<String> = {
-                        let sessions = app_state.sessions.read().unwrap();
-                        // TODO: Non-string Error might be useful
-                        let session = sessions.get(&id).ok_or("Session did not exist")?;
-
-                        session.hands.keys().cloned().collect()
-                    };
-
-                    play_state.id = Some(id);
-
-                    let response = OutgoingPlayMessage::Initialize {
-                        colors: colors.iter().collect(),
-                    };
-                    socket
-                        .send(Message::Text(Utf8Bytes::from(serde_json::to_string(
-                            &response,
-                        )?)))
-                        .await?;
-                }
-                IncomingPlayMessage::Color(color) => {
-                    let hand: Vec<HandObject> = {
-                        let sessions = app_state.sessions.read().unwrap();
-                        let session = sessions
-                            .get(play_state.id.as_ref().ok_or("No session was joined")?)
-                            .ok_or("Session did not exist")?;
-
-                        (*session
-                            .hands
-                            .get(&color)
-                            .ok_or("No player seated by that color")?)
-                        .clone()
-                    };
-
-                    let response = OutgoingPlayMessage::Hand(hand.iter().collect());
-                    socket
-                        .send(Message::Text(Utf8Bytes::from(serde_json::to_string(
-                            &response,
-                        )?)))
-                        .await?;
-                }
-            }
-            Ok(())
+        let Ok(Message::Text(text)) = msg else {
+            continue;
         };
 
-        if let Ok(Message::Text(_)) = msg
-            && let Err(err) = process(msg, &mut play_state).await
-        {
-            eprintln!(
-                "Encountered an error while handling a message from a player: {}",
-                err
-            );
-            break;
+        match serde_json::from_str(text.as_str()) {
+            Ok(IncomingPlayMessage::Initialize { id }) => {
+                let session = {
+                    let sessions = app_state.sessions.read().unwrap();
+                    sessions
+                        .get(&id)
+                        .map(Arc::to_owned)
+                        .ok_or("Session did not exist")
+                };
+
+                match session {
+                    Ok(session) => {
+                        let colors: Vec<String> = session
+                            .lock()
+                            .unwrap()
+                            .seats
+                            .keys()
+                            .map(String::to_owned)
+                            .collect();
+                        player_session = Some(Arc::downgrade(&session));
+                        let response = OutgoingPlayMessage::Initialize {
+                            colors: colors.iter().collect(),
+                        };
+                        send_message_or_break!(&mut socket, &response);
+                    }
+                    Err(err) => {
+                        eprintln!("Failed to access session: {}", err);
+                        let response = OutgoingPlayMessage::Error;
+                        send_message_or_break!(&mut socket, &response);
+                    }
+                }
+            }
+            Ok(IncomingPlayMessage::Color(color)) => {
+                let Some(session) = player_session.clone().and_then(|session| session.upgrade())
+                else {
+                    let response = OutgoingPlayMessage::Error;
+                    send_message_or_break!(&mut socket, &response);
+                    break;
+                };
+                let hand = session
+                    .lock()
+                    .unwrap()
+                    .seats
+                    .get(&color)
+                    .map(|seat| (&seat.hand).to_owned());
+                match hand {
+                    Some(hand) => {
+                        // Response constructed here because the inner value of the Option would be dropped outside the match block
+                        let response = OutgoingPlayMessage::Hand(hand.iter().collect());
+                        send_message_or_break!(&mut socket, &response);
+                    }
+                    None => {
+                        let response = OutgoingPlayMessage::Error;
+                        send_message_or_break!(&mut socket, &response);
+                    }
+                };
+            }
+            Err(err) => {
+                eprintln!(
+                    "Encountered an error while handling a message from a player: {}",
+                    err
+                );
+                break;
+            }
         }
     }
 }

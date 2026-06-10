@@ -3,13 +3,10 @@ use std::collections::HashMap;
 
 pub struct Session {
     pub steam_name: String,
-    pub hands: HashMap<String, Vec<HandObject>>,
+    pub seats: HashMap<String, Seat>,
 }
 
-// TODO: The values on these variants will be used in the future and there will be more variants.
-//       Once this happens, the dead_code lint should no longer be suppressed.
 #[derive(Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub enum HandObject {
     CustomDeck(CustomDeck),
 }
@@ -40,11 +37,15 @@ pub struct CustomDeck {
     card_id: f64,
 }
 
+pub struct Seat {
+    pub hand: Vec<HandObject>,
+}
+
 impl Session {
     pub fn new(steam_name: String) -> Self {
         Session {
             steam_name,
-            hands: HashMap::new(),
+            seats: HashMap::new(),
         }
     }
 }
