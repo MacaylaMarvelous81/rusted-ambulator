@@ -1,19 +1,21 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tokio::sync::broadcast;
 
 pub struct Session {
     pub steam_name: String,
     pub seats: HashMap<String, Seat>,
+    pub update_tx: broadcast::Sender<PlayUpdate>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HandObject {
     CustomDeck(CustomDeck),
 }
 
 // TODO: These fields will be used in the future. When they are, the dead_code lint should no longer
 //       be suppressed.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct CustomDeck {
     /// The path/URL of the face cardsheet.
@@ -41,11 +43,19 @@ pub struct Seat {
     pub hand: Vec<HandObject>,
 }
 
+#[derive(Clone)]
+pub enum PlayUpdate {
+    HandUpdate(String, Vec<HandObject>),
+}
+
 impl Session {
     pub fn new(steam_name: String) -> Self {
+        let (update_tx, _) = broadcast::channel(10);
+
         Session {
             steam_name,
             seats: HashMap::new(),
+            update_tx,
         }
     }
 }

@@ -3,7 +3,7 @@ mod session;
 mod template;
 
 use crate::play::handle_play;
-use crate::session::{HandObject, Seat, Session};
+use crate::session::{HandObject, PlayUpdate, Seat, Session};
 use crate::template::{IndexTemplate, SessionTemplate};
 use askama::Template;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
@@ -128,10 +128,11 @@ async fn update_hands(
             for (color, hand) in payload {
                 let seat = session
                     .seats
-                    .entry(color)
+                    .entry(color.to_owned())
                     .or_insert_with(|| Seat { hand: Vec::new() });
 
-                seat.hand = hand;
+                seat.hand = hand.to_owned();
+                let _ = session.update_tx.send(PlayUpdate::HandUpdate(color, hand));
             }
             StatusCode::NO_CONTENT
         }
