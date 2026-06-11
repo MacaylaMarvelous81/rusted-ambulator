@@ -1,3 +1,15 @@
+//! Complementary web service for Tabletop Simulator.
+//!
+//! This service is based on Tabletop Ambulator, which allows hosts on Tabletop Simulator to grant
+//! access to players to access and manage the contents of their hands from without using the game
+//! screen by using a web browser.
+
+#![warn(
+    missing_docs,
+    missing_copy_implementations,
+    missing_debug_implementations
+)]
+
 mod play;
 mod session;
 mod template;
