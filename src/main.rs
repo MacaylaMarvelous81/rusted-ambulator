@@ -14,7 +14,7 @@ mod play;
 mod session;
 mod template;
 
-use crate::play::{PlayUpdate, handle_play};
+use crate::play::handle_play;
 use crate::session::{HandObject, Session};
 use crate::template::{IndexTemplate, SessionTemplate};
 use askama::Template;
@@ -137,8 +137,7 @@ async fn update_hands(
         Some(session) => {
             let mut session = session.lock().unwrap();
 
-            session.seats = payload.to_owned();
-            let _ = session.update_tx.send(PlayUpdate::HandUpdate(payload));
+            session.update_hands(payload);
 
             StatusCode::NO_CONTENT
         }
