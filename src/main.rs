@@ -20,7 +20,7 @@ use crate::template::{IndexTemplate, SessionTemplate};
 use askama::Template;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::{StatusCode, header};
-use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::response::{ErrorResponse, Html, IntoResponse, Redirect, Response};
 use axum::routing::{any, get, put};
 use axum::{Json, Router};
 use rust_embed::Embed;
@@ -60,16 +60,12 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-fn serve_template(template: &impl Template) -> Result<Html<String>, &'static str> {
-    template.render().map(Html).map_err(|err| {
-        eprintln!("Template render error: {}", err);
-        "Template render error"
-    })
-}
-
 async fn serve_index() -> axum::response::Result<Html<String>> {
     let template = IndexTemplate;
-    Ok(serve_template(&template)?)
+    Template::render(&template)
+        .map(Html)
+        .inspect_err(|e| eprintln!("Template render error: {}", e))
+        .map_err(|_| ErrorResponse::from(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 async fn serve_static(Path(path): Path<String>) -> Response {
@@ -105,10 +101,13 @@ async fn visit_session(
         .unwrap();
 
     let template = SessionTemplate {
-        id: &id,
+        id: id.as_str(),
         session: &session,
     };
-    Ok(serve_template(&template)?)
+    Template::render(&template)
+        .map(Html)
+        .inspect_err(|e| eprintln!("Template render error: {}", e))
+        .map_err(|_| ErrorResponse::from(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 async fn create_session(

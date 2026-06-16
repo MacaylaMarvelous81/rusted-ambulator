@@ -8,6 +8,6 @@ pub struct IndexTemplate;
 #[derive(Template)]
 #[template(path = "session.html")]
 pub struct SessionTemplate<'a> {
-    pub id: &'a String,
+    pub id: &'a str,
     pub session: &'a Session,
 }
