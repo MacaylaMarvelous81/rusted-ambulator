@@ -1,6 +1,6 @@
-use std::array;
 use crate::play::PlayUpdate;
 use serde::{Deserialize, Serialize};
+use std::array;
 use std::ops::Index;
 use tokio::sync::broadcast;
 
@@ -153,7 +153,7 @@ impl TryFrom<&str> for PlayerColor {
             "Pink" => Ok(Self::Pink),
             "Grey" => Ok(Self::Grey),
             "Black" => Ok(Self::Black),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -175,7 +175,7 @@ impl TryFrom<usize> for PlayerColor {
             9 => Ok(Self::Pink),
             10 => Ok(Self::Grey),
             11 => Ok(Self::Black),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }

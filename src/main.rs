@@ -4,16 +4,12 @@
 //! access to players to access and manage the contents of their hands from without using the game
 //! screen by using a web browser.
 
-#![warn(
-    missing_docs,
-    missing_debug_implementations
-)]
+#![warn(missing_docs, missing_debug_implementations)]
 
 mod play;
 mod session;
 mod template;
 
-use std::array;
 use crate::play::handle_play;
 use crate::session::{HandObject, PlayerColor, Session};
 use crate::template::{IndexTemplate, SessionTemplate};
@@ -24,6 +20,7 @@ use axum::response::{ErrorResponse, Html, IntoResponse, Redirect, Response};
 use axum::routing::{any, get, put};
 use axum::{Json, Router};
 use rust_embed::Embed;
+use std::array;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, RwLock};
@@ -32,15 +29,14 @@ use std::sync::{Arc, Mutex, RwLock};
 #[folder = "assets/"]
 struct EmbedAsset;
 
+#[derive(Default)]
 struct AppState {
-    sessions: RwLock<HashMap<String, Arc<Mutex<Session>>>>,
+    sessions: RwLock<HashMap<String, Mutex<Session>>>,
 }
 
 impl AppState {
     fn new() -> Self {
-        AppState {
-            sessions: RwLock::new(HashMap::new()),
-        }
+        Self::default()
     }
 }
 
@@ -120,7 +116,7 @@ async fn create_session(
     let mut sessions = state.sessions.write().unwrap();
 
     let session = Session::new(name);
-    sessions.insert(id, Arc::new(Mutex::new(session)));
+    sessions.insert(id, Mutex::new(session));
 
     StatusCode::CREATED
 }
@@ -130,7 +126,7 @@ async fn update_hands(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<HashMap<String, Vec<HandObject>>>,
 ) -> StatusCode {
-    let mut sessions = state.sessions.write().unwrap();
+    let sessions = state.sessions.read().unwrap();
 
     let hand = array::from_fn(|i| {
         let color = PlayerColor::try_from(i);
@@ -144,7 +140,7 @@ async fn update_hands(
         }
     });
 
-    match sessions.get_mut(&id) {
+    match sessions.get(&id) {
         Some(session) => {
             let mut session = session.lock().unwrap();
 
