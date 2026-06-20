@@ -6,7 +6,6 @@
 
 #![warn(
     missing_docs,
-    missing_copy_implementations,
     missing_debug_implementations
 )]
 
@@ -14,8 +13,9 @@ mod play;
 mod session;
 mod template;
 
+use std::array;
 use crate::play::handle_play;
-use crate::session::{HandObject, Session};
+use crate::session::{HandObject, PlayerColor, Session};
 use crate::template::{IndexTemplate, SessionTemplate};
 use askama::Template;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
@@ -132,11 +132,23 @@ async fn update_hands(
 ) -> StatusCode {
     let mut sessions = state.sessions.write().unwrap();
 
+    let hand = array::from_fn(|i| {
+        let color = PlayerColor::try_from(i);
+        let color = color.as_ref().map(AsRef::as_ref);
+        if let Ok(color) = color {
+            // It would not be necessary to clone here if the vector could be moved, which could be
+            // done if payload was mutable
+            payload.get(color).cloned().unwrap_or_else(Vec::new)
+        } else {
+            Vec::new()
+        }
+    });
+
     match sessions.get_mut(&id) {
         Some(session) => {
             let mut session = session.lock().unwrap();
 
-            session.update_hands(payload);
+            session.update_hands(hand);
 
             StatusCode::NO_CONTENT
         }
