@@ -50,7 +50,7 @@ pub struct CustomDeck {
 ///
 /// See [Player Colors](https://api.tabletopsimulator.com/player/colors/) from the Tabletop
 /// Simulator API knowledge base.
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PlayerColor {
     White,
     Brown,

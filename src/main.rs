@@ -6,12 +6,14 @@
 
 #![warn(missing_docs, missing_debug_implementations)]
 
+mod app;
 mod play;
 mod session;
 mod template;
 
+use crate::app::AppState;
 use crate::play::handle_play;
-use crate::session::{HandObject, PlayerColor, Session};
+use crate::session::{HandObject, PlayerColor};
 use crate::template::{IndexTemplate, SessionTemplate};
 use askama::Template;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
@@ -23,22 +25,11 @@ use rust_embed::Embed;
 use std::array;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 
 #[derive(Embed)]
 #[folder = "assets/"]
 struct EmbedAsset;
-
-#[derive(Default)]
-struct AppState {
-    sessions: RwLock<HashMap<String, Mutex<Session>>>,
-}
-
-impl AppState {
-    fn new() -> Self {
-        Self::default()
-    }
-}
 
 #[tokio::main]
 async fn main() {
@@ -57,8 +48,7 @@ async fn main() {
 }
 
 async fn serve_index() -> axum::response::Result<Html<String>> {
-    let template = IndexTemplate;
-    Template::render(&template)
+    Template::render(&IndexTemplate)
         .map(Html)
         .inspect_err(|e| eprintln!("Template render error: {}", e))
         .map_err(|_| ErrorResponse::from(StatusCode::INTERNAL_SERVER_ERROR))
@@ -89,19 +79,16 @@ async fn visit_session(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
 ) -> axum::response::Result<Html<String>> {
-    let sessions = state.sessions.read().unwrap();
-    let session = sessions
-        .get(&id)
-        .ok_or((StatusCode::NOT_FOUND, "Session does not exist"))?
-        .lock()
-        .unwrap();
-
-    let template = SessionTemplate {
-        id: id.as_str(),
-        session: &session,
-    };
-    Template::render(&template)
-        .map(Html)
+    let rendered = state
+        .with_session(id.as_str(), |session| {
+            Template::render(&SessionTemplate {
+                id: id.as_str(),
+                session: &session,
+            })
+            .map(Html)
+        })
+        .ok_or(StatusCode::NOT_FOUND)?;
+    rendered
         .inspect_err(|e| eprintln!("Template render error: {}", e))
         .map_err(|_| ErrorResponse::from(StatusCode::INTERNAL_SERVER_ERROR))
 }
@@ -111,12 +98,12 @@ async fn create_session(
     Query(query): Query<HashMap<String, String>>,
     State(state): State<Arc<AppState>>,
 ) -> StatusCode {
-    let name = query.get("name").cloned().unwrap_or("Unknown".to_string());
+    let name = query
+        .get("name")
+        .cloned()
+        .unwrap_or("Unknown User".to_string());
 
-    let mut sessions = state.sessions.write().unwrap();
-
-    let session = Session::new(name);
-    sessions.insert(id, Mutex::new(session));
+    state.create_session(id, name);
 
     StatusCode::CREATED
 }
@@ -124,32 +111,24 @@ async fn create_session(
 async fn update_hands(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<HashMap<String, Vec<HandObject>>>,
+    Json(mut payload): Json<HashMap<String, Vec<HandObject>>>,
 ) -> StatusCode {
-    let sessions = state.sessions.read().unwrap();
-
     let hand = array::from_fn(|i| {
         let color = PlayerColor::try_from(i);
         let color = color.as_ref().map(AsRef::as_ref);
         if let Ok(color) = color {
-            // It would not be necessary to clone here if the vector could be moved, which could be
-            // done if payload was mutable
-            payload.get(color).cloned().unwrap_or_else(Vec::new)
+            payload.remove(color).unwrap_or_else(Vec::new)
         } else {
             Vec::new()
         }
     });
 
-    match sessions.get(&id) {
-        Some(session) => {
-            let mut session = session.lock().unwrap();
-
+    state
+        .with_session(id.as_str(), |mut session| {
             session.update_hands(hand);
-
             StatusCode::NO_CONTENT
-        }
-        None => StatusCode::NOT_FOUND,
-    }
+        })
+        .unwrap_or(StatusCode::NOT_FOUND)
 }
 
 async fn upgrade_play(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {

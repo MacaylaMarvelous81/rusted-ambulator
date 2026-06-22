@@ -144,16 +144,7 @@ async fn handle_play_message(
 ) -> Result<(), Error> {
     match message {
         IncomingPlayMessage::Initialize { id } => {
-            let (colors, update_rx) = {
-                let sessions = app_state.sessions.read().unwrap();
-                let session = sessions.get(&id).map(|session| session.lock().unwrap());
-                // The Option is unwrapped with let else here instead of ok_or and propagating
-                // because the error moves id which would be used later, and the compiler does not
-                // reason about propagation returning early.
-                let Some(session) = session else {
-                    return Err(Error::InvalidSession(id));
-                };
-
+            let data_opt = app_state.with_session(id.as_str(), |session| {
                 let colors: Vec<String> = session
                     .seats
                     .iter()
@@ -165,6 +156,11 @@ async fn handle_play_message(
                 let update_rx = session.update_tx.subscribe();
 
                 (colors, update_rx)
+            });
+            // let else used instead of propagating Option::ok_or_else because compiler wouldn't
+            // know about early return when moving id
+            let Some((colors, update_rx)) = data_opt else {
+                return Err(Error::InvalidSession(id));
             };
 
             let update_cancel_rx = {
@@ -194,16 +190,15 @@ async fn handle_play_message(
                 let mut state = state.lock().unwrap();
                 state.color =
                     PlayerColor::try_from(color.as_str()).map_err(|_| Error::InvalidColor)?;
+
                 let name = state
                     .session
                     .as_ref()
                     .ok_or_else(|| Error::InvalidSession(String::default()))?;
-                let sessions = app_state.sessions.read().unwrap();
-                let session = sessions
-                    .get(name)
-                    .ok_or(Error::InvalidSession(name.clone()))?;
 
-                session.lock().unwrap().seats[&state.color].clone()
+                app_state
+                    .with_session(name.as_str(), |session| session.seats[&state.color].clone())
+                    .ok_or_else(|| Error::InvalidSession(name.clone()))?
             };
 
             sender_tx
