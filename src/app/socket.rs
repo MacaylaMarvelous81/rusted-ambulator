@@ -3,13 +3,12 @@ use crate::session::{HandObject, PlayerColor};
 use axum::extract::ws::{Message, Utf8Bytes};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::mem;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-// TODO: Use in OutgoingPlayMessage::Error, then remove allow(dead_code)
-#[allow(dead_code)]
+#[derive(Debug)]
 pub enum Error {
     BadJson(serde_json::Error),
     Closed,
@@ -33,7 +32,7 @@ enum IncomingMessage {
 enum OutgoingMessage {
     Initialize { colors: Vec<String> },
     Hand(Vec<HandObject>),
-    Error,
+    Error(String),
 }
 
 struct PlayState {
@@ -42,9 +41,22 @@ struct PlayState {
     update_cancel_tx: oneshot::Sender<()>,
 }
 
-impl From<serde_json::Error> for Error {
-    fn from(value: serde_json::Error) -> Self {
-        Self::BadJson(value)
+impl From<Error> for OutgoingMessage {
+    fn from(value: Error) -> Self {
+        let message = format!("{}", value);
+        Self::Error(message)
+    }
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // TODO: messages for serde_json errors other than bad JSON, such as IO errors
+            Error::BadJson(err) => write!(f, "received bad json: {}", err),
+            Error::Closed => write!(f, "message channel was closed"),
+            Error::InvalidSession(id) => write!(f, "session by id {} does not or no longer exists", id),
+            Error::InvalidColor => write!(f, "a color was provided that is not a valid Tabletop Simulator color"),
+        }
     }
 }
 
@@ -110,8 +122,8 @@ where
                                 eprintln!("Failed to send play message as the channel closed.");
                                 break;
                             }
-                            Err(_) => {
-                                let result = sender_tx.send(OutgoingMessage::Error).await;
+                            Err(err) => {
+                                let result = sender_tx.send(OutgoingMessage::from(err)).await;
                                 if let Err(err) = result {
                                     eprintln!(
                                         "Failed to send play message as the channel closed: {}",
@@ -122,9 +134,9 @@ where
                             }
                         }
                     }
-                    Err(_) => {
+                    Err(err) => {
                         // TODO: include error details
-                        let result = sender_tx.send(OutgoingMessage::Error).await;
+                        let result = sender_tx.send(OutgoingMessage::from(Error::BadJson(err))).await;
                         if let Err(err) = result {
                             eprintln!("Failed to send play message as the channel closed: {}", err);
                             break;
