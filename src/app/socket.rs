@@ -1,3 +1,8 @@
+//! WebSocket connection handling for players.
+//!
+//! This module processes WebSocket connections that players use to interact with sessions. Both
+//! client and server communicate using JSON.
+
 use crate::AppState;
 use crate::session::{HandObject, PlayerColor};
 use axum::extract::ws::{Message, Utf8Bytes};
@@ -8,6 +13,7 @@ use std::mem;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
+/// Error returned by [`handle_play_message`].
 #[derive(Debug)]
 pub enum Error {
     BadJson(serde_json::Error),
@@ -16,8 +22,10 @@ pub enum Error {
     InvalidColor,
 }
 
+/// Messages describing updates to session data to be processed for players
+/// connected to the session.
 #[derive(Clone)]
-pub enum PlayUpdate {
+pub enum SessionUpdate {
     HandUpdate([Vec<HandObject>; PlayerColor::COUNT]),
 }
 
@@ -27,7 +35,6 @@ enum IncomingMessage {
     Color(String),
 }
 
-// TODO: Maybe derive Clone, reference interior vals
 #[derive(Serialize)]
 enum OutgoingMessage {
     Initialize { colors: Vec<String> },
@@ -54,8 +61,13 @@ impl Display for Error {
             // TODO: messages for serde_json errors other than bad JSON, such as IO errors
             Error::BadJson(err) => write!(f, "received bad json: {}", err),
             Error::Closed => write!(f, "message channel was closed"),
-            Error::InvalidSession(id) => write!(f, "session by id {} does not or no longer exists", id),
-            Error::InvalidColor => write!(f, "a color was provided that is not a valid Tabletop Simulator color"),
+            Error::InvalidSession(id) => {
+                write!(f, "session by id {} does not or no longer exists", id)
+            }
+            Error::InvalidColor => write!(
+                f,
+                "a color was provided that is not a valid Tabletop Simulator color"
+            ),
         }
     }
 }
@@ -76,6 +88,7 @@ impl PlayState {
     }
 }
 
+/// Handles communication with an upgraded websocket connection, internally keeping track of user state.
 pub async fn handle_play<S, R>(mut sender: S, mut receiver: R, app_state: Arc<AppState>)
 where
     S: Sink<Message, Error: Debug> + Unpin + Send + 'static,
@@ -136,7 +149,9 @@ where
                     }
                     Err(err) => {
                         // TODO: include error details
-                        let result = sender_tx.send(OutgoingMessage::from(Error::BadJson(err))).await;
+                        let result = sender_tx
+                            .send(OutgoingMessage::from(Error::BadJson(err)))
+                            .await;
                         if let Err(err) = result {
                             eprintln!("Failed to send play message as the channel closed: {}", err);
                             break;
@@ -227,7 +242,7 @@ async fn handle_play_message(
 }
 
 async fn handle_update(
-    mut update_rx: broadcast::Receiver<PlayUpdate>,
+    mut update_rx: broadcast::Receiver<SessionUpdate>,
     mut cancel_rx: oneshot::Receiver<()>,
     sender_tx: mpsc::Sender<OutgoingMessage>,
     state: Arc<Mutex<PlayState>>,
@@ -235,7 +250,7 @@ async fn handle_update(
     loop {
         tokio::select! {
             update = update_rx.recv() => match update {
-                Ok(PlayUpdate::HandUpdate(hands)) => {
+                Ok(SessionUpdate::HandUpdate(hands)) => {
                     let colors: Vec<String> = hands.iter().enumerate()
                         .filter(|(_, hand)| !hand.is_empty())
                         .flat_map(|(index, _)| PlayerColor::try_from(index).ok())

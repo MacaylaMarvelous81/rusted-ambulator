@@ -1,4 +1,4 @@
-use crate::app::socket::PlayUpdate;
+use crate::app::socket::SessionUpdate;
 use serde::{Deserialize, Serialize};
 use std::array;
 use std::ops::Index;
@@ -8,7 +8,7 @@ use tokio::sync::broadcast;
 pub struct Session {
     pub steam_name: String,
     pub seats: [Vec<HandObject>; PlayerColor::COUNT],
-    pub update_tx: broadcast::Sender<PlayUpdate>,
+    pub update_tx: broadcast::Sender<SessionUpdate>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -82,7 +82,7 @@ impl Session {
         self.seats = hands.to_owned();
         // Updating the hand is a success regardless of whether there are players connected to
         // receive a hand update
-        let _ = self.update_tx.send(PlayUpdate::HandUpdate(hands));
+        let _ = self.update_tx.send(SessionUpdate::HandUpdate(hands));
     }
 }
 
@@ -206,7 +206,7 @@ mod tests {
 
         session.update_hands(hands);
 
-        let PlayUpdate::HandUpdate(hand) = update_rx.recv().await.unwrap();
+        let SessionUpdate::HandUpdate(hand) = update_rx.recv().await.unwrap();
 
         assert_eq!(
             hand[PlayerColor::Red as usize].first().unwrap().to_owned(),
