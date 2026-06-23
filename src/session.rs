@@ -1,4 +1,4 @@
-use crate::play::PlayUpdate;
+use crate::app::socket::PlayUpdate;
 use serde::{Deserialize, Serialize};
 use std::array;
 use std::ops::Index;

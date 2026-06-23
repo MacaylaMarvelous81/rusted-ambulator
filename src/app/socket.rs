@@ -1,30 +1,12 @@
 use crate::AppState;
 use crate::session::{HandObject, PlayerColor};
-use axum::extract::ws::{Message, Utf8Bytes, WebSocket};
-use futures_util::{SinkExt, StreamExt};
+use axum::extract::ws::{Message, Utf8Bytes};
+use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 use std::mem;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc, oneshot};
-
-#[derive(Deserialize)]
-enum IncomingPlayMessage {
-    Initialize { id: String },
-    Color(String),
-}
-
-// TODO: Maybe derive Clone, reference interior vals
-#[derive(Serialize)]
-enum OutgoingPlayMessage {
-    Initialize { colors: Vec<String> },
-    Hand(Vec<HandObject>),
-    Error,
-}
-
-#[derive(Clone)]
-pub enum PlayUpdate {
-    HandUpdate([Vec<HandObject>; PlayerColor::COUNT]),
-}
 
 // TODO: Use in OutgoingPlayMessage::Error, then remove allow(dead_code)
 #[allow(dead_code)]
@@ -35,11 +17,43 @@ pub enum Error {
     InvalidColor,
 }
 
+#[derive(Clone)]
+pub enum PlayUpdate {
+    HandUpdate([Vec<HandObject>; PlayerColor::COUNT]),
+}
+
+#[derive(Deserialize)]
+enum IncomingMessage {
+    Initialize { id: String },
+    Color(String),
+}
+
+// TODO: Maybe derive Clone, reference interior vals
+#[derive(Serialize)]
+enum OutgoingMessage {
+    Initialize { colors: Vec<String> },
+    Hand(Vec<HandObject>),
+    Error,
+}
+
 struct PlayState {
     session: Option<String>,
     color: PlayerColor,
     update_cancel_tx: oneshot::Sender<()>,
 }
+
+impl From<serde_json::Error> for Error {
+    fn from(value: serde_json::Error) -> Self {
+        Self::BadJson(value)
+    }
+}
+
+impl From<mpsc::error::SendError<OutgoingMessage>> for Error {
+    fn from(_: mpsc::error::SendError<OutgoingMessage>) -> Self {
+        Self::Closed
+    }
+}
+
 impl PlayState {
     pub fn new(update_cancel_tx: oneshot::Sender<()>) -> Self {
         Self {
@@ -50,20 +64,11 @@ impl PlayState {
     }
 }
 
-impl From<serde_json::Error> for Error {
-    fn from(value: serde_json::Error) -> Self {
-        Self::BadJson(value)
-    }
-}
-
-impl From<mpsc::error::SendError<OutgoingPlayMessage>> for Error {
-    fn from(_: mpsc::error::SendError<OutgoingPlayMessage>) -> Self {
-        Self::Closed
-    }
-}
-
-pub async fn handle_play(socket: WebSocket, app_state: Arc<AppState>) {
-    let (mut sender, mut receiver) = socket.split();
+pub async fn handle_play<S, R>(mut sender: S, mut receiver: R, app_state: Arc<AppState>)
+where
+    S: Sink<Message, Error: Debug> + Unpin + Send + 'static,
+    R: Stream<Item = Result<Message, axum::Error>> + Unpin + Send + 'static,
+{
     let (sender_tx, mut sender_rx) = mpsc::channel(2);
 
     let (update_cancel_tx, _) = oneshot::channel();
@@ -82,7 +87,7 @@ pub async fn handle_play(socket: WebSocket, app_state: Arc<AppState>) {
                 .send(Message::Text(Utf8Bytes::from(serialized)))
                 .await
             {
-                eprintln!("Failed to send serialized websocket message: {}", err);
+                eprintln!("Failed to send serialized websocket message: {:?}", err);
                 break;
             }
         }
@@ -106,7 +111,7 @@ pub async fn handle_play(socket: WebSocket, app_state: Arc<AppState>) {
                                 break;
                             }
                             Err(_) => {
-                                let result = sender_tx.send(OutgoingPlayMessage::Error).await;
+                                let result = sender_tx.send(OutgoingMessage::Error).await;
                                 if let Err(err) = result {
                                     eprintln!(
                                         "Failed to send play message as the channel closed: {}",
@@ -119,7 +124,7 @@ pub async fn handle_play(socket: WebSocket, app_state: Arc<AppState>) {
                     }
                     Err(_) => {
                         // TODO: include error details
-                        let result = sender_tx.send(OutgoingPlayMessage::Error).await;
+                        let result = sender_tx.send(OutgoingMessage::Error).await;
                         if let Err(err) = result {
                             eprintln!("Failed to send play message as the channel closed: {}", err);
                             break;
@@ -137,13 +142,13 @@ pub async fn handle_play(socket: WebSocket, app_state: Arc<AppState>) {
 }
 
 async fn handle_play_message(
-    message: IncomingPlayMessage,
-    sender_tx: mpsc::Sender<OutgoingPlayMessage>,
+    message: IncomingMessage,
+    sender_tx: mpsc::Sender<OutgoingMessage>,
     state: &Arc<Mutex<PlayState>>,
     app_state: &Arc<AppState>,
 ) -> Result<(), Error> {
     match message {
-        IncomingPlayMessage::Initialize { id } => {
+        IncomingMessage::Initialize { id } => {
             let data_opt = app_state.with_session(id.as_str(), |session| {
                 let colors: Vec<String> = session
                     .seats
@@ -181,11 +186,11 @@ async fn handle_play_message(
             }
 
             sender_tx
-                .send(OutgoingPlayMessage::Initialize { colors })
+                .send(OutgoingMessage::Initialize { colors })
                 .await
                 .map_err(Error::from)
         }
-        IncomingPlayMessage::Color(color) => {
+        IncomingMessage::Color(color) => {
             let hand = {
                 let mut state = state.lock().unwrap();
                 state.color =
@@ -202,7 +207,7 @@ async fn handle_play_message(
             };
 
             sender_tx
-                .send(OutgoingPlayMessage::Hand(hand))
+                .send(OutgoingMessage::Hand(hand))
                 .await
                 .map_err(Error::from)
         }
@@ -212,7 +217,7 @@ async fn handle_play_message(
 async fn handle_update(
     mut update_rx: broadcast::Receiver<PlayUpdate>,
     mut cancel_rx: oneshot::Receiver<()>,
-    sender_tx: mpsc::Sender<OutgoingPlayMessage>,
+    sender_tx: mpsc::Sender<OutgoingMessage>,
     state: Arc<Mutex<PlayState>>,
 ) {
     loop {
@@ -225,7 +230,7 @@ async fn handle_update(
                         .map(|color| String::from(color.as_ref()))
                         .collect();
                     let _ = sender_tx
-                        .send(OutgoingPlayMessage::Initialize {
+                        .send(OutgoingMessage::Initialize {
                             colors,
                         })
                         .await;
@@ -233,7 +238,7 @@ async fn handle_update(
                         let color = &state.lock().unwrap().color;
                         hands[color].to_owned()
                     };
-                    let _ = sender_tx.send(OutgoingPlayMessage::Hand(hand)).await;
+                    let _ = sender_tx.send(OutgoingMessage::Hand(hand)).await;
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,

@@ -7,20 +7,20 @@
 #![warn(missing_docs, missing_debug_implementations)]
 
 mod app;
-mod play;
 mod session;
 mod template;
 
 use crate::app::AppState;
-use crate::play::handle_play;
 use crate::session::{HandObject, PlayerColor};
 use crate::template::{IndexTemplate, SessionTemplate};
+use app::socket::handle_play;
 use askama::Template;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::{StatusCode, header};
 use axum::response::{ErrorResponse, Html, IntoResponse, Redirect, Response};
 use axum::routing::{any, get, put};
 use axum::{Json, Router};
+use futures_util::StreamExt;
 use rust_embed::Embed;
 use std::array;
 use std::collections::HashMap;
@@ -132,5 +132,8 @@ async fn update_hands(
 }
 
 async fn upgrade_play(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
-    ws.on_upgrade(|socket| handle_play(socket, state))
+    ws.on_upgrade(|socket| {
+        let (sender, receiver) = socket.split();
+        handle_play(sender, receiver, state)
+    })
 }

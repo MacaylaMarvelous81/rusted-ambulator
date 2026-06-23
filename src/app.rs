@@ -4,6 +4,8 @@ use crate::session::Session;
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, RwLock};
 
+pub mod socket;
+
 /// Provider of the state that Tabletop Ambulator needs to keep track of.
 ///
 /// Provides the app state, including runtime data such as the active game
