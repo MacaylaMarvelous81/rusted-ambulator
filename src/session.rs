@@ -7,7 +7,7 @@ use tokio::sync::broadcast;
 #[derive(Debug)]
 pub struct Session {
     pub steam_name: String,
-    pub seats: [Vec<HandObject>; PlayerColor::COUNT],
+    pub seats: [Option<Vec<HandObject>>; PlayerColor::COUNT],
     pub update_tx: broadcast::Sender<SessionUpdate>,
 }
 
@@ -73,12 +73,12 @@ impl Session {
 
         Session {
             steam_name,
-            seats: array::from_fn(|_| Vec::new()),
+            seats: array::repeat(None),
             update_tx,
         }
     }
 
-    pub fn update_hands(&mut self, hands: [Vec<HandObject>; PlayerColor::COUNT]) {
+    pub fn update_hands(&mut self, hands: [Option<Vec<HandObject>>; PlayerColor::COUNT]) {
         self.seats = hands.to_owned();
         // Updating the hand is a success regardless of whether there are players connected to
         // receive a hand update
@@ -201,15 +201,16 @@ mod tests {
             card_id: 1,
         };
 
-        let mut hands: [Vec<HandObject>; PlayerColor::COUNT] = array::from_fn(|_| Vec::new());
-        hands[PlayerColor::Red as usize].push(HandObject::CustomDeck(card.to_owned()));
+        let mut hands: [Option<Vec<HandObject>>; PlayerColor::COUNT] = array::repeat(None);
+        let red_hand = vec![HandObject::CustomDeck(card.to_owned())];
+        hands[PlayerColor::Red as usize] = Some(red_hand);
 
         session.update_hands(hands);
 
         let SessionUpdate::HandUpdate(hand) = update_rx.recv().await.unwrap();
 
         assert_eq!(
-            hand[PlayerColor::Red as usize].first().unwrap().to_owned(),
+            hand[PlayerColor::Red as usize].clone().unwrap().first().unwrap().to_owned(),
             HandObject::CustomDeck(card)
         );
     }

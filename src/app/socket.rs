@@ -26,7 +26,7 @@ pub enum Error {
 /// connected to the session.
 #[derive(Clone)]
 pub enum SessionUpdate {
-    HandUpdate([Vec<HandObject>; PlayerColor::COUNT]),
+    HandUpdate([Option<Vec<HandObject>>; PlayerColor::COUNT]),
 }
 
 #[derive(Deserialize)]
@@ -66,7 +66,7 @@ impl Display for Error {
             }
             Error::InvalidColor => write!(
                 f,
-                "a color was provided that is not a valid Tabletop Simulator color"
+                "a color was provided that is either unknown or unseated"
             ),
         }
     }
@@ -181,7 +181,7 @@ async fn handle_play_message(
                     .seats
                     .iter()
                     .enumerate()
-                    .filter(|(_, hand)| !hand.is_empty())
+                    .filter(|(_, hand)| hand.is_some())
                     .flat_map(|(index, _)| PlayerColor::try_from(index).ok())
                     .map(|color| String::from(color.as_ref()))
                     .collect();
@@ -220,19 +220,23 @@ async fn handle_play_message(
         IncomingMessage::Color(color) => {
             let hand = {
                 let mut state = state.lock().unwrap();
-                state.color =
-                    PlayerColor::try_from(color.as_str()).map_err(|_| Error::InvalidColor)?;
-
+                
+                let color = PlayerColor::try_from(color.as_str()).map_err(|_| Error::InvalidColor)?;
                 let name = state
                     .session
                     .as_ref()
                     .ok_or_else(|| Error::InvalidSession(String::default()))?;
-
-                app_state
-                    .with_session(name.as_str(), |session| session.seats[&state.color].clone())
-                    .ok_or_else(|| Error::InvalidSession(name.clone()))?
+                let hand = app_state
+                    .with_session(name.as_str(), |session| session.seats[&color].clone())
+                    .ok_or_else(|| Error::InvalidSession(name.clone()))?;
+                
+                if hand.is_some() {
+                    state.color = color;
+                }
+                
+                hand.ok_or(Error::InvalidColor)?
             };
-
+            
             sender_tx
                 .send(OutgoingMessage::Hand(hand))
                 .await
@@ -252,7 +256,7 @@ async fn handle_update(
             update = update_rx.recv() => match update {
                 Ok(SessionUpdate::HandUpdate(hands)) => {
                     let colors: Vec<String> = hands.iter().enumerate()
-                        .filter(|(_, hand)| !hand.is_empty())
+                        .filter(|(_, hand)| hand.is_some())
                         .flat_map(|(index, _)| PlayerColor::try_from(index).ok())
                         .map(|color| String::from(color.as_ref()))
                         .collect();
@@ -262,10 +266,17 @@ async fn handle_update(
                         })
                         .await;
                     let hand = {
-                        let color = &state.lock().unwrap().color;
-                        hands[color].to_owned()
+                        let mut state = state.lock().unwrap();
+                        let hand = hands[&state.color].to_owned();
+                        if hand.is_none() {
+                            state.color = Default::default();
+                        }
+                        
+                        hand
                     };
-                    let _ = sender_tx.send(OutgoingMessage::Hand(hand)).await;
+                    if let Some(hand) = hand {
+                        let _ = sender_tx.send(OutgoingMessage::Hand(hand)).await;
+                    }
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,

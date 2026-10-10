@@ -114,13 +114,9 @@ async fn update_hands(
     Json(mut payload): Json<HashMap<String, Vec<HandObject>>>,
 ) -> StatusCode {
     let hand = array::from_fn(|i| {
-        let color = PlayerColor::try_from(i);
-        let color = color.as_ref().map(AsRef::as_ref);
-        if let Ok(color) = color {
-            payload.remove(color).unwrap_or_else(Vec::new)
-        } else {
-            Vec::new()
-        }
+        let color = PlayerColor::try_from(i)
+            .expect("all possible values of i should convert to a PlayerColor variant");
+        payload.remove(color.as_ref())
     });
 
     state
