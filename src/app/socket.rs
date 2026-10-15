@@ -64,10 +64,9 @@ impl Display for Error {
             Error::InvalidSession(id) => {
                 write!(f, "session by id {} does not or no longer exists", id)
             }
-            Error::InvalidColor => write!(
-                f,
-                "a color was provided that is either unknown or unseated"
-            ),
+            Error::InvalidColor => {
+                write!(f, "a color was provided that is either unknown or unseated")
+            }
         }
     }
 }
@@ -220,8 +219,9 @@ async fn handle_play_message(
         IncomingMessage::Color(color) => {
             let hand = {
                 let mut state = state.lock().unwrap();
-                
-                let color = PlayerColor::try_from(color.as_str()).map_err(|_| Error::InvalidColor)?;
+
+                let color =
+                    PlayerColor::try_from(color.as_str()).map_err(|_| Error::InvalidColor)?;
                 let name = state
                     .session
                     .as_ref()
@@ -229,14 +229,14 @@ async fn handle_play_message(
                 let hand = app_state
                     .with_session(name.as_str(), |session| session.seats[&color].clone())
                     .ok_or_else(|| Error::InvalidSession(name.clone()))?;
-                
+
                 if hand.is_some() {
                     state.color = color;
                 }
-                
+
                 hand.ok_or(Error::InvalidColor)?
             };
-            
+
             sender_tx
                 .send(OutgoingMessage::Hand(hand))
                 .await
@@ -271,7 +271,7 @@ async fn handle_update(
                         if hand.is_none() {
                             state.color = Default::default();
                         }
-                        
+
                         hand
                     };
                     if let Some(hand) = hand {

@@ -210,7 +210,12 @@ mod tests {
         let SessionUpdate::HandUpdate(hand) = update_rx.recv().await.unwrap();
 
         assert_eq!(
-            hand[PlayerColor::Red as usize].clone().unwrap().first().unwrap().to_owned(),
+            hand[PlayerColor::Red as usize]
+                .clone()
+                .unwrap()
+                .first()
+                .unwrap()
+                .to_owned(),
             HandObject::CustomDeck(card)
         );
     }
