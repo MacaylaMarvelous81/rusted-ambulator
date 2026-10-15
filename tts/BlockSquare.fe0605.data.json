@@ -1,0 +1,45 @@
+{
+  "GUID": "fe0605",
+  "Name": "BlockSquare",
+  "Transform": {
+    "posX": 0.53179425,
+    "posY": 1.30432093,
+    "posZ": -2.391716,
+    "rotX": -3.20627464e-7,
+    "rotY": -0.00000454324163,
+    "rotZ": 0.00000101446858,
+    "scaleX": 3,
+    "scaleY": 0.1,
+    "scaleZ": 5
+  },
+  "Nickname": "",
+  "Description": "",
+  "GMNotes": "",
+  "AltLookAngle": {
+    "x": 0,
+    "y": 0,
+    "z": 0
+  },
+  "ColorDiffuse": {
+    "r": 0.9264706,
+    "g": 0,
+    "b": 0
+  },
+  "LayoutGroupSortIndex": 0,
+  "Value": 0,
+  "Locked": false,
+  "Grid": true,
+  "Snap": true,
+  "IgnoreFoW": false,
+  "MeasureMovement": false,
+  "DragSelectable": true,
+  "Autoraise": true,
+  "Sticky": true,
+  "Tooltip": true,
+  "GridProjection": false,
+  "HideWhenFaceDown": false,
+  "Hands": false,
+  "LuaScript": "local address, session_id = \"\"\n\nfunction onLoad(script_state)\n\taddress = self.UI.getAttribute(\"address\", \"text\")\n\tsession_id = self.UI.getAttribute(\"sessionId\", \"text\")\n\n\tlocal scale = self.getScale()\n\n\tself.UI.setAttribute(\"basePanel\", \"scale\", tostring(1 / scale.x) .. \" \" .. tostring(1 / scale.z) .. \" 1\")\nend\n\nfunction onEndEditAddress(player, value, id)\n\taddress = value\nend\n\nfunction onEndEditId(player, value, id)\n\tsession_id = value\nend\n\nfunction onSubmitSession(player, value, id)\n\tif address == nil or session_id == nil then\n\t\treturn print(\"The address and session id fields must be filled!\")\n\tend\n\n\tself.UI.setAttribute(\"address\", \"interactable\", false)\n\tself.UI.setAttribute(\"sessionId\", \"interactable\", false)\n\tself.UI.setAttribute(\"submitSession\", \"interactable\", false)\n\n\t-- TODO: url encode inputs (id and name)\n\tWebRequest.put(address .. \"/session/\" .. session_id .. \"?name=\" .. player.steam_name, \"\", function(request)\n\t\tif request.response_code == 201 then\n\t\t\tprint(\"A session with id '\" .. session_id .. \"' was successfully created!\")\n\t\telseif request.is_error then\n\t\t\tprint(\"Encountered a request error: \" .. request.error)\n\t\telse\n\t\t\tprint(\"Unexpected response: \" .. request.response_code .. \" \" .. request.text)\n\t\tend\n\n\t\tif request.response_code ~= 201 then\n\t\t\tself.UI.setAttribute(\"address\", \"interactable\", true)\n\t\t\tself.UI.setAttribute(\"sessionId\", \"interactable\", true)\n\t\t\tself.UI.setAttribute(\"submitSession\", \"interactable\", true)\n\t\tend\n\tend)\nend\n",
+  "LuaScriptState": "",
+  "XmlUI": "<!--\n<VerticalLayout position=\"0 0 -50\" scale=\"1 1 1\">\n\t<InputField visibility=\"Host\" text=\"http://localhost:3000\" placeholder=\"http://example.com\"></InputField>\n\t<InputField placeholder=\"000000\"></InputField>\n</VerticalLayout>\n-->\n<Panel id=\"basePanel\" position=\"0 0 -51\">\n\t<Text position=\"0 100\" text=\"Server address\"></Text>\n\t<InputField id=\"address\" position=\"0 50\" visibility=\"Host\" onEndEdit=\"onEndEditAddress\" text=\"http://localhost:3000\" placeholder=\"http://example.com\"></InputField>\n\t<Text position=\"0 0\" text=\"Session ID\"></Text>\n\t<InputField id=\"sessionId\" position=\"0 -50\" visibility=\"Host\" onEndEdit=\"onEndEditId\" placeholder=\"000000\"></InputField>\n\t<Button id=\"submitSession\" position=\"0 -100\" visibility=\"Host\" width=\"100\" height=\"30\" onClick=\"onSubmitSession\" textAlignment=\"MiddleCenter\">Create Session</Button>\n</Panel>\n"
+}

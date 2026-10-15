@@ -1,0 +1,13 @@
+<!--
+<VerticalLayout position="0 0 -50" scale="1 1 1">
+	<InputField visibility="Host" text="http://localhost:3000" placeholder="http://example.com"></InputField>
+	<InputField placeholder="000000"></InputField>
+</VerticalLayout>
+-->
+<Panel id="basePanel" position="0 0 -51">
+	<Text position="0 100" text="Server address"></Text>
+	<InputField id="address" position="0 50" visibility="Host" onEndEdit="onEndEditAddress" text="http://localhost:3000" placeholder="http://example.com"></InputField>
+	<Text position="0 0" text="Session ID"></Text>
+	<InputField id="sessionId" position="0 -50" visibility="Host" onEndEdit="onEndEditId" placeholder="000000"></InputField>
+	<Button id="submitSession" position="0 -100" visibility="Host" width="100" height="30" onClick="onSubmitSession" textAlignment="MiddleCenter">Create Session</Button>
+</Panel>
